@@ -183,6 +183,20 @@
       }
     },
     {
+      "payloadId": "e1q-S9210ZHS5CZB2",
+      "displayName": "Galaxy S24 China | Kernel 6.1.128 (CZB2)",
+      "models": ["SM-S9210"],
+      "kernelVersions": ["6.1.128"],
+      "exploit": {
+        "url": "https://raw.githubusercontent.com/BuSung-dev/Root-My-Galaxy-Payloads/main/artifacts/e1q-S9210ZHS5CZB2/cve-2026-43499-app.so",
+        "size": 104128
+      },
+      "kernelsu": {
+        "url": "https://raw.githubusercontent.com/BuSung-dev/Root-My-Galaxy-Payloads/main/kernelsu/ksud-e1q-S9210ZHS5CZB2-kdp",
+        "size": 4778624
+      }
+    },
+    {
       "payloadId": "essi-A566EXXSCCZG6",
       "displayName": "Galaxy A56 5G | Kernel 6.6.102",
       "models": ["SM-A5660", "SM-A566B", "SM-A566E", "SM-A566S", "SM-A566U1", "SM-A566W"],
