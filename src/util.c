@@ -561,6 +561,8 @@ void log_startup_context(void) {
 #if defined(APP_CONTROLLED_MM_GROUP_RECLAIM) && \
     APP_CONTROLLED_MM_GROUP_RECLAIM
   reclaim = "controlled";
+#elif defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
+  reclaim = "fresh";
 #endif
 #if defined(APP_CLOSED_FOPS_ROUTE) && APP_CLOSED_FOPS_ROUTE
   fops_route = "direct";
