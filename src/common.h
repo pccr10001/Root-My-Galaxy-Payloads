@@ -453,7 +453,7 @@ int pipe_phys_write(
     int fd, int pipefd[2], uintptr_t buf_addr, uintptr_t direct_addr,
     const void *data, size_t len);
 #if !defined(APP_EXACT_PIPE_BUFFER_ONLY) || !APP_EXACT_PIPE_BUFFER_ONLY
-void forge_pipe_buffers_on_page(
+int forge_pipe_buffers_on_page(
     int fd, uintptr_t base, uintptr_t direct_addr, size_t len, int for_write);
 #endif
 int pipe_phys_read_data(int fd, uintptr_t direct_addr, void *out, size_t len);

