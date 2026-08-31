@@ -190,6 +190,7 @@
 
 #define PAGE_PAYLOAD_FOPS 0
 #define PAGE_PAYLOAD_SLIDE 1
+#define PAGE_PAYLOAD_PIPE 2
 
 struct kernelsnitch_shared_state;
 
