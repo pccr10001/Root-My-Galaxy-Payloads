@@ -191,6 +191,10 @@
       "exploit": {
         "url": "https://raw.githubusercontent.com/pccr10001/Root-My-Galaxy-Payloads/main/artifacts/e1q-S9210ZHS5CZB2/cve-2026-43499-app.so",
         "size": 104128
+      },
+      "kernelsu": {
+        "url": "https://raw.githubusercontent.com/pccr10001/Root-My-Galaxy-Payloads/main/kernelsu/ksud-e1q-S9210ZHS5CZB2-kdp",
+        "size": 4778624
       }
     },
     {
