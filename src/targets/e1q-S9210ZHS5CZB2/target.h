@@ -28,6 +28,9 @@
 #define SLIDE_USE_FAKE_TASK 1
 #define MM_STRUCT_SZ 0x400
 #define MM_ORDER 3
+/* Target BTF: KMALLOC_CGROUP=1 and NR_KMALLOC_TYPES=3. */
+#define KMALLOC_CGROUP_TYPE 1
+#define KMALLOC_CACHE_TYPES 3
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 /* Reject low-slot mm pages before the reclaim sequence can corrupt the slab. */
