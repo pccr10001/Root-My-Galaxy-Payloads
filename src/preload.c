@@ -132,9 +132,19 @@ __attribute__((constructor)) static void load(void) {
       "PSELECT_DELAY_USEC", DEFAULT_PSELECT_DELAY_USEC, 0, 1000000);
   int attempt_timeout_sec = env_int(
       "EXPLOIT_ATTEMPT_TIMEOUT_SEC", DEFAULT_ATTEMPT_TIMEOUT_SEC, 5, 900);
+#ifdef APP_MIN_ATTEMPT_TIMEOUT_SEC
+  if (attempt_timeout_sec < APP_MIN_ATTEMPT_TIMEOUT_SEC) {
+    attempt_timeout_sec = APP_MIN_ATTEMPT_TIMEOUT_SEC;
+  }
+#endif
   int p0_attempt_timeout_sec = env_int(
       "P0_ATTEMPT_TIMEOUT_SEC", DEFAULT_P0_ATTEMPT_TIMEOUT_SEC, 5,
       attempt_timeout_sec);
+#ifdef APP_MIN_P0_ATTEMPT_TIMEOUT_SEC
+  if (p0_attempt_timeout_sec < APP_MIN_P0_ATTEMPT_TIMEOUT_SEC) {
+    p0_attempt_timeout_sec = APP_MIN_P0_ATTEMPT_TIMEOUT_SEC;
+  }
+#endif
   if (p0_attempt_timeout_sec > attempt_timeout_sec) {
     p0_attempt_timeout_sec = attempt_timeout_sec;
   }

