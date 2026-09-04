@@ -217,8 +217,8 @@
       "kernelVersions": ["6.1.128"],
       "requiresFreshP0Session": true,
       "exploit": {
-        "url": "https://raw.githubusercontent.com/pccr10001/Root-My-Galaxy-Payloads/main/artifacts/e1q-S9210ZHS5CZB2/cve-2026-43499-app.so",
-        "size": 104128
+        "url": "https://raw.githubusercontent.com/BuSung-dev/Root-My-Galaxy-Payloads/main/artifacts/e1q-S9210ZHS5CZB2/cve-2026-43499-app.so",
+        "size": 89840
       },
       "kernelsu": {
         "url": "https://raw.githubusercontent.com/pccr10001/Root-My-Galaxy-Payloads/main/kernelsu/ksud-e1q-S9210ZHS5CZB2-kdp",
